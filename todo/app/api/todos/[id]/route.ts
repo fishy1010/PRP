@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { getSingaporeNow, toSingaporeISO, isValidFutureDate, getNextRecurrenceDate } from '@/lib/timezone';
-import type { Todo, UpdateTodoRequest, RecurrencePattern } from '@/types/todo';
+import type { Todo, UpdateTodoRequest, Subtask, TodoWithSubtasks, Tag, RecurrencePattern } from '@/types/todo';
+import { getSessionFromRequest } from '@/lib/auth';
 
 interface Params {
   params: Promise<{
@@ -12,6 +13,11 @@ interface Params {
 // GET /api/todos/[id] - Get a single todo
 export async function GET(request: NextRequest, { params }: Params) {
   try {
+    const session = getSessionFromRequest(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const todo = db.prepare('SELECT * FROM todos WHERE id = ?').get(id) as Todo | undefined;
 
@@ -22,7 +28,37 @@ export async function GET(request: NextRequest, { params }: Params) {
       );
     }
 
-    return NextResponse.json(todo);
+    const subtasks = db.prepare(`
+      SELECT * FROM subtasks
+      WHERE todo_id = ?
+      ORDER BY position ASC
+    `).all(id) as Subtask[];
+
+    const tags = db.prepare(`
+      SELECT t.*
+      FROM todo_tags tt
+      JOIN tags t ON t.id = tt.tag_id
+      WHERE tt.todo_id = ? AND t.user_id = ?
+      ORDER BY t.name ASC
+    `).all(id, session.sub) as Tag[];
+
+    const normalizedSubtasks = subtasks.map((subtask) => ({
+      ...subtask,
+      completed: Boolean(subtask.completed),
+    }));
+
+    const total = normalizedSubtasks.length;
+    const completed = normalizedSubtasks.filter((s) => s.completed).length;
+    const percentage = total === 0 ? 0 : Math.round((completed / total) * 100);
+
+    const todoWithSubtasks: TodoWithSubtasks = {
+      ...todo,
+      subtasks: normalizedSubtasks,
+      subtask_progress: { completed, total, percentage },
+      tags,
+    };
+
+    return NextResponse.json(todoWithSubtasks);
   } catch (error) {
     console.error('Error fetching todo:', error);
     return NextResponse.json(
@@ -35,9 +71,14 @@ export async function GET(request: NextRequest, { params }: Params) {
 // PUT /api/todos/[id] - Update a todo
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
+    const session = getSessionFromRequest(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body: UpdateTodoRequest = await request.json();
-    const { title, due_date, priority, completed, is_recurring, recurrence_pattern } = body;
+    const { title, due_date, priority, completed, is_recurring, recurrence_pattern, reminder_minutes } = body;
 
     // Check if todo exists
     const existingTodo = db.prepare('SELECT * FROM todos WHERE id = ?').get(id) as Todo | undefined;
@@ -139,6 +180,18 @@ export async function PUT(request: NextRequest, { params }: Params) {
       values.push(null);
     }
 
+    if (reminder_minutes !== undefined) {
+      updates.push('reminder_minutes = ?');
+      values.push(reminder_minutes);
+    }
+
+    // If due date or reminder changed, reset notification
+    if ((due_date !== undefined && due_date !== existingTodo.due_date) ||
+        (reminder_minutes !== undefined && reminder_minutes !== existingTodo.reminder_minutes)) {
+      updates.push('last_notification_sent = ?');
+      values.push(null);
+    }
+
     if (updates.length === 0) {
       return NextResponse.json(existingTodo);
     }
@@ -188,7 +241,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
           priority !== undefined ? priority : existingTodo.priority,
           1,
           nextPattern,
-          existingTodo.reminder_minutes,
+          reminder_minutes !== undefined ? reminder_minutes : existingTodo.reminder_minutes,
           now,
           now
         );
@@ -198,8 +251,37 @@ export async function PUT(request: NextRequest, { params }: Params) {
     transaction();
 
     const updatedTodo = db.prepare('SELECT * FROM todos WHERE id = ?').get(id) as Todo;
+    const subtasks = db.prepare(`
+      SELECT * FROM subtasks
+      WHERE todo_id = ?
+      ORDER BY position ASC
+    `).all(id) as Subtask[];
 
-    return NextResponse.json(updatedTodo);
+    const tags = db.prepare(`
+      SELECT t.*
+      FROM todo_tags tt
+      JOIN tags t ON t.id = tt.tag_id
+      WHERE tt.todo_id = ? AND t.user_id = ?
+      ORDER BY t.name ASC
+    `).all(id, session.sub) as Tag[];
+
+    const normalizedSubtasks = subtasks.map((subtask) => ({
+      ...subtask,
+      completed: Boolean(subtask.completed),
+    }));
+
+    const total = normalizedSubtasks.length;
+    const completedCount = normalizedSubtasks.filter((s) => s.completed).length;
+    const percentage = total === 0 ? 0 : Math.round((completedCount / total) * 100);
+
+    const todoWithSubtasks: TodoWithSubtasks = {
+      ...updatedTodo,
+      subtasks: normalizedSubtasks,
+      subtask_progress: { completed: completedCount, total, percentage },
+      tags,
+    };
+
+    return NextResponse.json(todoWithSubtasks);
   } catch (error) {
     console.error('Error updating todo:', error);
     return NextResponse.json(

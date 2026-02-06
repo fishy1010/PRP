@@ -1,28 +1,53 @@
 'use client';
 
 import { useState } from 'react';
-import type { Todo, Priority, RecurrencePattern } from '@/types/todo';
+import { TodoWithSubtasks, Subtask, Priority, REMINDER_OPTIONS, Tag, RecurrencePattern } from '@/types/todo';
 
 interface TodoItemProps {
-  todo: Todo;
+  todo: TodoWithSubtasks;
   isOverdue: boolean;
   onUpdated: () => void;
   onDeleted: () => void;
+  availableTags: Tag[];
 }
 
-export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: TodoItemProps) {
+export default function TodoItem({
+  todo,
+  isOverdue,
+  onUpdated,
+  onDeleted,
+  availableTags,
+}: TodoItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(todo.title);
   const [editDueDate, setEditDueDate] = useState(
     todo.due_date ? new Date(todo.due_date).toISOString().slice(0, 16) : ''
   );
   const [editPriority, setEditPriority] = useState<Priority>(todo.priority);
+  const [editReminder, setEditReminder] = useState<number | null>(todo.reminder_minutes ?? null);
   const [editIsRecurring, setEditIsRecurring] = useState<boolean>(Boolean(todo.is_recurring));
   const [editRecurrencePattern, setEditRecurrencePattern] = useState<RecurrencePattern>(
     (todo.recurrence_pattern as RecurrencePattern) || 'daily'
   );
   const [editError, setEditError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isSubtasksOpen, setIsSubtasksOpen] = useState(false);
+  const [subtaskTitle, setSubtaskTitle] = useState('');
+  const [subtaskError, setSubtaskError] = useState('');
+  const [subtaskLoading, setSubtaskLoading] = useState(false);
+  const [editTags, setEditTags] = useState<number[]>(todo.tags.map((tag) => tag.id));
+
+  const subtasks = todo.subtasks || [];
+  const progress = todo.subtask_progress || { completed: 0, total: 0, percentage: 0 };
+
+  const getTextColor = (hex: string) => {
+    const normalized = hex.replace('#', '');
+    const r = parseInt(normalized.substring(0, 2), 16);
+    const g = parseInt(normalized.substring(2, 4), 16);
+    const b = parseInt(normalized.substring(4, 6), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.6 ? '#111827' : '#FFFFFF';
+  };
 
   const handleToggleComplete = async () => {
     setLoading(true);
@@ -87,10 +112,18 @@ export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: Todo
           priority: editPriority,
           is_recurring: editIsRecurring,
           recurrence_pattern: editIsRecurring ? editRecurrencePattern : null,
+          reminder_minutes: editReminder === null ? undefined : editReminder,
         }),
       });
 
       if (response.ok) {
+        await fetch(`/api/todos/${todo.id}/tags`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ tag_ids: editTags }),
+        });
         setIsEditing(false);
         onUpdated();
       }
@@ -98,6 +131,71 @@ export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: Todo
       console.error('Error updating todo:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAddSubtask = async () => {
+    const trimmed = subtaskTitle.trim();
+    if (!trimmed) {
+      setSubtaskError('Subtask title is required');
+      return;
+    }
+
+    setSubtaskLoading(true);
+    setSubtaskError('');
+
+    try {
+      const response = await fetch(`/api/todos/${todo.id}/subtasks`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title: trimmed }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to add subtask');
+      }
+
+      setSubtaskTitle('');
+      onUpdated();
+    } catch (error) {
+      setSubtaskError(error instanceof Error ? error.message : 'Failed to add subtask');
+    } finally {
+      setSubtaskLoading(false);
+    }
+  };
+
+  const handleToggleSubtask = async (subtask: Subtask) => {
+    setSubtaskLoading(true);
+    try {
+      await fetch(`/api/subtasks/${subtask.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ completed: !subtask.completed }),
+      });
+      onUpdated();
+    } catch (error) {
+      console.error('Error updating subtask:', error);
+    } finally {
+      setSubtaskLoading(false);
+    }
+  };
+
+  const handleDeleteSubtask = async (subtaskId: number) => {
+    setSubtaskLoading(true);
+    try {
+      await fetch(`/api/subtasks/${subtaskId}`, {
+        method: 'DELETE',
+      });
+      onUpdated();
+    } catch (error) {
+      console.error('Error deleting subtask:', error);
+    } finally {
+      setSubtaskLoading(false);
     }
   };
 
@@ -167,6 +265,22 @@ export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: Todo
               <option value="medium">Medium</option>
               <option value="low">Low</option>
             </select>
+            <select
+              value={editReminder === null ? 'null' : editReminder}
+              onChange={(e) => {
+                const val = e.target.value;
+                setEditReminder(val === 'null' ? null : Number(val));
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+              disabled={loading}
+            >
+              <option value="null">No Reminder</option>
+              {REMINDER_OPTIONS.filter(o => o.value !== null).map((opt) => (
+                <option key={opt.label} value={opt.value as number}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
             <input
               type="datetime-local"
               value={editDueDate}
@@ -177,7 +291,14 @@ export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: Todo
                   setEditIsRecurring(false);
                 }
               }}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+              onChange={(e) => {
+                const value = e.target.value;
+                setEditDueDate(value);
+                if (!value) {
+                  setEditIsRecurring(false);
+                }
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none md:col-span-2"
               disabled={loading}
             />
           </div>
@@ -209,6 +330,40 @@ export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: Todo
               {editError}
             </div>
           )}
+          {availableTags.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {availableTags.map((tag) => {
+                const isSelected = editTags.includes(tag.id);
+                const textColor = getTextColor(tag.color);
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => {
+                      setEditTags((prev) =>
+                        prev.includes(tag.id)
+                          ? prev.filter((id) => id !== tag.id)
+                          : [...prev, tag.id]
+                      );
+                    }}
+                    className={`px-3 py-1 rounded-full border text-sm transition-colors ${
+                      isSelected
+                        ? 'border-transparent'
+                        : 'border-gray-300 text-gray-600 bg-white'
+                    }`}
+                    style={
+                      isSelected
+                        ? { backgroundColor: tag.color, color: textColor }
+                        : undefined
+                    }
+                  >
+                    {isSelected ? '✓ ' : ''}
+                    {tag.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div className="flex gap-2">
             <button
               onClick={handleSaveEdit}
@@ -226,6 +381,8 @@ export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: Todo
                 setEditIsRecurring(Boolean(todo.is_recurring));
                 setEditRecurrencePattern((todo.recurrence_pattern as RecurrencePattern) || 'daily');
                 setEditError('');
+                setEditReminder(todo.reminder_minutes ?? null);
+                setEditTags(todo.tags.map((tag) => tag.id));
               }}
               disabled={loading}
               className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md"
@@ -269,18 +426,64 @@ export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: Todo
                 🔄 {todo.recurrence_pattern}
               </span>
             )}
+            {todo.tags.map((tag) => (
+              <span
+                key={tag.id}
+                className="px-2 py-1 text-xs font-semibold rounded-full border"
+                style={{ backgroundColor: tag.color, color: getTextColor(tag.color) }}
+              >
+                {tag.name}
+              </span>
+            ))}
+            {todo.tags.map((tag) => (
+              <span
+                key={tag.id}
+                className="px-2 py-1 text-xs font-semibold rounded-full border"
+                style={{ backgroundColor: tag.color, color: getTextColor(tag.color) }}
+              >
+                {tag.name}
+              </span>
+            ))}
           </div>
+          {progress.total > 0 && (
+            <div className="mt-2">
+              <div className="text-xs text-gray-500">
+                {progress.completed}/{progress.total} subtasks
+              </div>
+              <div className="h-1.5 bg-gray-200 rounded-full mt-1">
+                <div
+                  className="h-1.5 bg-blue-500 rounded-full"
+                  style={{ width: `${progress.percentage}%` }}
+                />
+              </div>
+            </div>
+          )}
           {todo.due_date && (
-            <p
-              className={`text-sm mt-1 ${
-                isOverdue ? 'text-red-600 font-semibold' : 'text-gray-600'
-              }`}
-            >
-              {getRelativeTime(todo.due_date)}
-            </p>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <p
+                className={`text-sm ${
+                  isOverdue ? 'text-red-600 font-semibold' : 'text-gray-600'
+                }`}
+              >
+                {getRelativeTime(todo.due_date)}
+              </p>
+              {todo.reminder_minutes !== null && todo.reminder_minutes !== undefined && (
+                <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 flex items-center gap-1" title="Reminder set">
+                  🔔 {REMINDER_OPTIONS.find(o => o.value === todo.reminder_minutes)?.label.replace(' before', '') || `${todo.reminder_minutes}m`}
+                </span>
+              )}
+            </div>
           )}
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={() => setIsSubtasksOpen(!isSubtasksOpen)}
+            disabled={loading}
+            className="px-3 py-1 text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+          >
+            {isSubtasksOpen ? '▼ Subtasks' : '▶ Subtasks'}
+            {progress.total > 0 ? ` (${progress.total})` : ''}
+          </button>
           <button
             onClick={() => setIsEditing(true)}
             disabled={loading}
@@ -297,6 +500,64 @@ export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: Todo
           </button>
         </div>
       </div>
+      {isSubtasksOpen && (
+        <div className="mt-4 bg-gray-50 border border-gray-200 rounded-md p-3">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={subtaskTitle}
+              onChange={(e) => setSubtaskTitle(e.target.value)}
+              placeholder="Add a subtask..."
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+              disabled={subtaskLoading}
+            />
+            <button
+              type="button"
+              onClick={handleAddSubtask}
+              disabled={subtaskLoading || !subtaskTitle.trim()}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md disabled:opacity-50"
+            >
+              Add
+            </button>
+          </div>
+          {subtaskError && (
+            <div className="mt-2 text-sm text-red-600">
+              {subtaskError}
+            </div>
+          )}
+          <div className="mt-3 space-y-2">
+            {subtasks.map((subtask) => (
+              <div key={subtask.id} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={Boolean(subtask.completed)}
+                  onChange={() => handleToggleSubtask(subtask)}
+                  disabled={subtaskLoading}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span
+                  className={`flex-1 text-sm ${
+                    subtask.completed ? 'line-through text-gray-400' : 'text-gray-700'
+                  }`}
+                >
+                  {subtask.title}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteSubtask(subtask.id)}
+                  disabled={subtaskLoading}
+                  className="text-red-600 hover:bg-red-50 rounded-md px-2 py-1"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            {subtasks.length === 0 && (
+              <p className="text-sm text-gray-500">No subtasks yet.</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

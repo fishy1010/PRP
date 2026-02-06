@@ -1,14 +1,15 @@
 'use client';
 
-import type { Todo } from '@/types/todo';
+import type { TodoWithSubtasks, Tag } from '@/types/todo';
 import TodoItem from './TodoItem';
 
 interface TodoListProps {
-  overdue: Todo[];
-  pending: Todo[];
-  completed: Todo[];
+  overdue: TodoWithSubtasks[];
+  pending: TodoWithSubtasks[];
+  completed: TodoWithSubtasks[];
   onTodoUpdated: () => void;
   onTodoDeleted: () => void;
+  availableTags: Tag[];
 }
 
 export default function TodoList({
@@ -17,6 +18,7 @@ export default function TodoList({
   completed,
   onTodoUpdated,
   onTodoDeleted,
+  availableTags,
 }: TodoListProps) {
   return (
     <div className="space-y-8">
@@ -37,6 +39,7 @@ export default function TodoList({
                 isOverdue={true}
                 onUpdated={onTodoUpdated}
                 onDeleted={onTodoDeleted}
+                availableTags={availableTags}
               />
             ))}
           </div>
@@ -57,6 +60,7 @@ export default function TodoList({
                 isOverdue={false}
                 onUpdated={onTodoUpdated}
                 onDeleted={onTodoDeleted}
+                availableTags={availableTags}
               />
             ))}
           </div>
@@ -77,6 +81,7 @@ export default function TodoList({
                 isOverdue={false}
                 onUpdated={onTodoUpdated}
                 onDeleted={onTodoDeleted}
+                availableTags={availableTags}
               />
             ))}
           </div>
