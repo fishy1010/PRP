@@ -5,7 +5,7 @@ test.describe('Feature 02: Priority System', () => {
     // Clear all todos before each test
     const response = await request.get('http://localhost:3000/api/todos');
     const data = await response.json();
-    const allTodos = [...(data.activeTodos || []), ...(data.completedTodos || [])];
+    const allTodos = data.todos || [];
     
     for (const todo of allTodos) {
       await request.delete(`http://localhost:3000/api/todos/${todo.id}`);

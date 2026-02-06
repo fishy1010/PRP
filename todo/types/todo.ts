@@ -1,4 +1,5 @@
 export type Priority = 'high' | 'medium' | 'low';
+export type RecurrencePattern = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 export interface Todo {
   id: number;
@@ -7,7 +8,7 @@ export interface Todo {
   due_date: string | null;
   priority: Priority;
   is_recurring: boolean;
-  recurrence_pattern: string | null;
+  recurrence_pattern: RecurrencePattern | null;
   reminder_minutes: number | null;
   last_notification_sent: string | null;
   created_at: string;
@@ -18,6 +19,8 @@ export interface CreateTodoRequest {
   title: string;
   due_date?: string;
   priority?: Priority;
+  is_recurring?: boolean;
+  recurrence_pattern?: RecurrencePattern;
 }
 
 export interface UpdateTodoRequest {
@@ -25,6 +28,8 @@ export interface UpdateTodoRequest {
   due_date?: string;
   priority?: Priority;
   completed?: boolean;
+  is_recurring?: boolean;
+  recurrence_pattern?: RecurrencePattern | null;
 }
 
 export interface TodosResponse {

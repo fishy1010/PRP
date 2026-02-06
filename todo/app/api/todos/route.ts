@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { getSingaporeNow, toSingaporeISO, isValidFutureDate, isOverdue } from '@/lib/timezone';
-import type { Todo, CreateTodoRequest } from '@/types/todo';
+import type { Todo, CreateTodoRequest, RecurrencePattern } from '@/types/todo';
 
 // GET /api/todos - Get all todos
 export async function GET() {
@@ -53,7 +53,13 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body: CreateTodoRequest = await request.json();
-    const { title, due_date, priority = 'medium' } = body;
+    const {
+      title,
+      due_date,
+      priority = 'medium',
+      is_recurring = false,
+      recurrence_pattern,
+    } = body;
 
     // Validation
     if (!title || title.trim().length === 0) {
@@ -71,6 +77,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (is_recurring && !due_date) {
+      return NextResponse.json(
+        { error: 'Due date is required for recurring todos' },
+        { status: 400 }
+      );
+    }
+
     // Validate priority
     if (!['high', 'medium', 'low'].includes(priority)) {
       return NextResponse.json(
@@ -79,18 +92,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const allowedPatterns: RecurrencePattern[] = ['daily', 'weekly', 'monthly', 'yearly'];
+    if (is_recurring && !recurrence_pattern) {
+      return NextResponse.json(
+        { error: 'Recurrence pattern is required for recurring todos' },
+        { status: 400 }
+      );
+    }
+
+    if (recurrence_pattern && !allowedPatterns.includes(recurrence_pattern)) {
+      return NextResponse.json(
+        { error: 'Invalid recurrence pattern' },
+        { status: 400 }
+      );
+    }
+
     const now = toSingaporeISO(getSingaporeNow());
     const trimmedTitle = title.trim();
 
     const stmt = db.prepare(`
-      INSERT INTO todos (title, due_date, priority, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO todos (title, due_date, priority, is_recurring, recurrence_pattern, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
       trimmedTitle,
       due_date || null,
       priority,
+      is_recurring ? 1 : 0,
+      is_recurring ? recurrence_pattern : null,
       now,
       now
     );

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { Todo, Priority } from '@/types/todo';
+import type { Todo, Priority, RecurrencePattern } from '@/types/todo';
 
 interface TodoItemProps {
   todo: Todo;
@@ -17,6 +17,11 @@ export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: Todo
     todo.due_date ? new Date(todo.due_date).toISOString().slice(0, 16) : ''
   );
   const [editPriority, setEditPriority] = useState<Priority>(todo.priority);
+  const [editIsRecurring, setEditIsRecurring] = useState<boolean>(Boolean(todo.is_recurring));
+  const [editRecurrencePattern, setEditRecurrencePattern] = useState<RecurrencePattern>(
+    (todo.recurrence_pattern as RecurrencePattern) || 'daily'
+  );
+  const [editError, setEditError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleToggleComplete = async () => {
@@ -63,6 +68,11 @@ export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: Todo
 
   const handleSaveEdit = async () => {
     if (!editTitle.trim()) return;
+    if (editIsRecurring && !editDueDate) {
+      setEditError('Due date is required for recurring todos');
+      return;
+    }
+    setEditError('');
 
     setLoading(true);
     try {
@@ -75,6 +85,8 @@ export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: Todo
           title: editTitle.trim(),
           due_date: editDueDate || null,
           priority: editPriority,
+          is_recurring: editIsRecurring,
+          recurrence_pattern: editIsRecurring ? editRecurrencePattern : null,
         }),
       });
 
@@ -158,11 +170,45 @@ export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: Todo
             <input
               type="datetime-local"
               value={editDueDate}
-              onChange={(e) => setEditDueDate(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setEditDueDate(value);
+                if (!value) {
+                  setEditIsRecurring(false);
+                }
+              }}
               className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
               disabled={loading}
             />
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={editIsRecurring}
+                onChange={(e) => setEditIsRecurring(e.target.checked)}
+                disabled={loading || !editDueDate}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Repeat
+            </label>
+            <select
+              value={editRecurrencePattern}
+              onChange={(e) => setEditRecurrencePattern(e.target.value as RecurrencePattern)}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+              disabled={loading || !editDueDate || !editIsRecurring}
+            >
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </div>
+          {editError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-md text-sm">
+              {editError}
+            </div>
+          )}
           <div className="flex gap-2">
             <button
               onClick={handleSaveEdit}
@@ -177,6 +223,9 @@ export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: Todo
                 setEditTitle(todo.title);
                 setEditDueDate(todo.due_date ? new Date(todo.due_date).toISOString().slice(0, 16) : '');
                 setEditPriority(todo.priority);
+                setEditIsRecurring(Boolean(todo.is_recurring));
+                setEditRecurrencePattern((todo.recurrence_pattern as RecurrencePattern) || 'daily');
+                setEditError('');
               }}
               disabled={loading}
               className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md"
@@ -215,6 +264,11 @@ export default function TodoItem({ todo, isOverdue, onUpdated, onDeleted }: Todo
             >
               {todo.priority.charAt(0).toUpperCase() + todo.priority.slice(1)}
             </span>
+            {todo.is_recurring && todo.recurrence_pattern && (
+              <span className="px-2 py-1 text-xs font-semibold rounded-full border border-gray-300 bg-gray-100 text-gray-700">
+                🔄 {todo.recurrence_pattern}
+              </span>
+            )}
           </div>
           {todo.due_date && (
             <p

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { getSingaporeNow, toSingaporeISO, isValidFutureDate } from '@/lib/timezone';
-import type { Todo, UpdateTodoRequest } from '@/types/todo';
+import { getSingaporeNow, toSingaporeISO, isValidFutureDate, getNextRecurrenceDate } from '@/lib/timezone';
+import type { Todo, UpdateTodoRequest, RecurrencePattern } from '@/types/todo';
 
 interface Params {
   params: Promise<{
@@ -37,7 +37,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   try {
     const { id } = await params;
     const body: UpdateTodoRequest = await request.json();
-    const { title, due_date, priority, completed } = body;
+    const { title, due_date, priority, completed, is_recurring, recurrence_pattern } = body;
 
     // Check if todo exists
     const existingTodo = db.prepare('SELECT * FROM todos WHERE id = ?').get(id) as Todo | undefined;
@@ -47,6 +47,9 @@ export async function PUT(request: NextRequest, { params }: Params) {
         { status: 404 }
       );
     }
+
+    const existingIsRecurring = Boolean(existingTodo.is_recurring);
+    const existingCompleted = Boolean(existingTodo.completed);
 
     // Validation
     if (title !== undefined && title.trim().length === 0) {
@@ -68,6 +71,35 @@ export async function PUT(request: NextRequest, { params }: Params) {
         { error: 'Invalid priority value' },
         { status: 400 }
       );
+    }
+
+    const allowedPatterns: RecurrencePattern[] = ['daily', 'weekly', 'monthly', 'yearly'];
+    if (recurrence_pattern !== undefined && recurrence_pattern !== null && !allowedPatterns.includes(recurrence_pattern)) {
+      return NextResponse.json(
+        { error: 'Invalid recurrence pattern' },
+        { status: 400 }
+      );
+    }
+
+    const nextIsRecurring = is_recurring !== undefined ? is_recurring : existingIsRecurring;
+    const nextDueDate = due_date !== undefined ? due_date : existingTodo.due_date;
+    const nextPattern =
+      recurrence_pattern !== undefined ? recurrence_pattern : existingTodo.recurrence_pattern;
+
+    if (nextIsRecurring) {
+      if (!nextDueDate) {
+        return NextResponse.json(
+          { error: 'Due date is required for recurring todos' },
+          { status: 400 }
+        );
+      }
+
+      if (!nextPattern || !allowedPatterns.includes(nextPattern)) {
+        return NextResponse.json(
+          { error: 'Recurrence pattern is required for recurring todos' },
+          { status: 400 }
+        );
+      }
     }
 
     // Build update query
@@ -94,21 +126,76 @@ export async function PUT(request: NextRequest, { params }: Params) {
       values.push(completed ? 1 : 0);
     }
 
+    if (is_recurring !== undefined) {
+      updates.push('is_recurring = ?');
+      values.push(is_recurring ? 1 : 0);
+    }
+
+    if (recurrence_pattern !== undefined) {
+      updates.push('recurrence_pattern = ?');
+      values.push(recurrence_pattern);
+    } else if (is_recurring === false) {
+      updates.push('recurrence_pattern = ?');
+      values.push(null);
+    }
+
     if (updates.length === 0) {
       return NextResponse.json(existingTodo);
     }
 
+    const now = toSingaporeISO(getSingaporeNow());
+    const willBeCompleted = completed !== undefined ? completed : existingCompleted;
+    const shouldCreateNext =
+      !existingCompleted &&
+      willBeCompleted &&
+      nextIsRecurring &&
+      !!nextDueDate &&
+      !!nextPattern;
+
     updates.push('updated_at = ?');
-    values.push(toSingaporeISO(getSingaporeNow()));
+    values.push(now);
     values.push(id);
 
-    const stmt = db.prepare(`
+    const updateStmt = db.prepare(`
       UPDATE todos 
       SET ${updates.join(', ')}
       WHERE id = ?
     `);
 
-    stmt.run(...values);
+    const insertStmt = db.prepare(`
+      INSERT INTO todos (
+        title,
+        completed,
+        due_date,
+        priority,
+        is_recurring,
+        recurrence_pattern,
+        reminder_minutes,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const transaction = db.transaction(() => {
+      updateStmt.run(...values);
+
+      if (shouldCreateNext) {
+        const nextDueDateValue = getNextRecurrenceDate(nextDueDate as string, nextPattern as RecurrencePattern);
+        insertStmt.run(
+          title !== undefined ? title.trim() : existingTodo.title,
+          0,
+          nextDueDateValue,
+          priority !== undefined ? priority : existingTodo.priority,
+          1,
+          nextPattern,
+          existingTodo.reminder_minutes,
+          now,
+          now
+        );
+      }
+    });
+
+    transaction();
 
     const updatedTodo = db.prepare('SELECT * FROM todos WHERE id = ?').get(id) as Todo;
 

@@ -28,6 +28,65 @@ export function toSingaporeISO(date: Date): string {
   return singaporeDate.toISOString();
 }
 
+function getDaysInMonth(year: number, monthIndex: number): number {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+function buildDateWithSameTime(base: Date, year: number, monthIndex: number, day: number): Date {
+  const next = new Date(base);
+  next.setFullYear(year, monthIndex, 1);
+  next.setHours(base.getHours(), base.getMinutes(), base.getSeconds(), base.getMilliseconds());
+  next.setDate(day);
+  return next;
+}
+
+/**
+ * Calculate next recurrence date in Singapore timezone.
+ */
+export function getNextRecurrenceDate(
+  dueDateString: string,
+  pattern: 'daily' | 'weekly' | 'monthly' | 'yearly'
+): string {
+  const base = toSingaporeDate(dueDateString);
+  const year = base.getFullYear();
+  const month = base.getMonth();
+  const day = base.getDate();
+
+  let next: Date;
+
+  switch (pattern) {
+    case 'daily':
+      next = new Date(base);
+      next.setDate(day + 1);
+      break;
+    case 'weekly':
+      next = new Date(base);
+      next.setDate(day + 7);
+      break;
+    case 'monthly': {
+      const targetMonth = month + 1;
+      const targetYear = year + Math.floor(targetMonth / 12);
+      const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+      const daysInTarget = getDaysInMonth(targetYear, normalizedMonth);
+      const targetDay = Math.min(day, daysInTarget);
+      next = buildDateWithSameTime(base, targetYear, normalizedMonth, targetDay);
+      break;
+    }
+    case 'yearly': {
+      const targetYear = year + 1;
+      const daysInTarget = getDaysInMonth(targetYear, month);
+      const targetDay = Math.min(day, daysInTarget);
+      next = buildDateWithSameTime(base, targetYear, month, targetDay);
+      break;
+    }
+    default:
+      next = new Date(base);
+      break;
+  }
+
+  return toSingaporeISO(next);
+}
+
 /**
  * Check if a due date is in the future (Singapore timezone)
  * Minimum 1 minute in the future
