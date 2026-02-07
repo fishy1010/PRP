@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     const exportData = {
       version: '1.0',
       export_date: toSingaporeISO(getSingaporeNow()),
-      user_id: DEFAULT_USER_ID,
+      user_id: session.sub,
       todos,
       tags,
       todo_tags: todoTags,

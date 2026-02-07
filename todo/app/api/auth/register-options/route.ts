@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     const rpID = getRpId(origin);
     const userID = crypto.randomBytes(32);
 
-    const options = generateRegistrationOptions({
+    const options = await generateRegistrationOptions({
       rpName: RP_NAME,
       rpID,
       userID,

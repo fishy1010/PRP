@@ -1,6 +1,12 @@
 export type Priority = 'high' | 'medium' | 'low';
 export type RecurrencePattern = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
+export interface Holiday {
+  id: number;
+  date: string;
+  name: string;
+}
+
 export interface Todo {
   id: number;
   title: string;
@@ -95,7 +101,6 @@ export interface UpdateTodoRequest {
   completed?: boolean;
   is_recurring?: boolean;
   recurrence_pattern?: RecurrencePattern | null;
-  reminder_minutes?: number;
   reminder_minutes?: number;
 }
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import type { TodoWithSubtasks, Priority, Tag, Template } from '@/types/todo';
 import TodoForm from '@/components/TodoForm';
 import TodoList from '@/components/TodoList';
@@ -200,6 +201,12 @@ export default function Home() {
             {user && (
               <span className="text-sm text-gray-600">Welcome, {user.username}</span>
             )}
+            <Link
+              href="/calendar"
+              className="px-3 py-1 text-sm border border-blue-300 text-blue-700 rounded-md hover:bg-blue-50"
+            >
+              📅 Calendar
+            </Link>
             <button
               type="button"
               onClick={handleLogout}

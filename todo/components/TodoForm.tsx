@@ -6,6 +6,7 @@ interface TodoFormProps {
   onTodoCreated: () => void;
   tags: Tag[];
   onTemplateSaved: () => void;
+}
 
 export default function TodoForm({ onTodoCreated, tags, onTemplateSaved }: TodoFormProps) {
   const [title, setTitle] = useState('');
@@ -43,6 +44,8 @@ export default function TodoForm({ onTodoCreated, tags, onTemplateSaved }: TodoF
 
     if (isRecurring && !dueDate) {
       setError('Due date is required for recurring todos');
+      return;
+    }
 
     setLoading(true);
 
@@ -53,6 +56,7 @@ export default function TodoForm({ onTodoCreated, tags, onTemplateSaved }: TodoF
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          title: title.trim(),
           due_date: dueDate || undefined,
           priority,
           is_recurring: isRecurring,
@@ -81,6 +85,7 @@ export default function TodoForm({ onTodoCreated, tags, onTemplateSaved }: TodoF
     } finally {
       setLoading(false);
     }
+  };
 
   const handleSaveTemplate = async () => {
     setTemplateError('');
@@ -240,6 +245,10 @@ export default function TodoForm({ onTodoCreated, tags, onTemplateSaved }: TodoF
                 <option value="monthly">Monthly</option>
                 <option value="yearly">Yearly</option>
               </select>
+            </div>
+          </div>
+        )}
+
         {tags.length > 0 && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

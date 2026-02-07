@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
     const authenticators = db.prepare(
       'SELECT * FROM authenticators WHERE user_id = ?'
-    ).all(user.id) as { credential_id: string }[];
+    ).all(user.id) as { credential_id: string; transports: string | null }[];
 
     if (authenticators.length === 0) {
       return NextResponse.json(
@@ -47,11 +47,11 @@ export async function POST(request: NextRequest) {
     const origin = getOrigin(request);
     const rpID = getRpId(origin);
 
-    const options = generateAuthenticationOptions({
+    const options = await generateAuthenticationOptions({
       rpID,
       allowCredentials: authenticators.map((auth) => ({
-        id: Buffer.from(auth.credential_id, 'base64url'),
-        type: 'public-key',
+        id: auth.credential_id,
+        transports: auth.transports ? JSON.parse(auth.transports) : undefined,
       })),
       userVerification: 'preferred',
     });

@@ -291,13 +291,6 @@ export default function TodoItem({
                   setEditIsRecurring(false);
                 }
               }}
-              onChange={(e) => {
-                const value = e.target.value;
-                setEditDueDate(value);
-                if (!value) {
-                  setEditIsRecurring(false);
-                }
-              }}
               className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none md:col-span-2"
               disabled={loading}
             />

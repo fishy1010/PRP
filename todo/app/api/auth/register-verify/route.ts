@@ -74,16 +74,16 @@ export async function POST(request: NextRequest) {
     const userResult = insertUser.run(username, now, now);
     const userId = Number(userResult.lastInsertRowid);
 
-    const { credentialID, credentialPublicKey, counter } = verification.registrationInfo;
+    const { credential, credentialType } = verification.registrationInfo!;
 
     db.prepare(`
       INSERT INTO authenticators (user_id, credential_id, public_key, counter, transports, created_at)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(
       userId,
-      Buffer.from(credentialID).toString('base64url'),
-      Buffer.from(credentialPublicKey).toString('base64url'),
-      counter,
+      credential.id,
+      Buffer.from(credential.publicKey).toString('base64url'),
+      credential.counter,
       response.response.transports ? JSON.stringify(response.response.transports) : null,
       now
     );
